@@ -220,6 +220,9 @@ bool AdBlockModel::setData(const QModelIndex &index, const QVariant &value, int 
         || index.column() != 0
         || (flags(index) & Qt::ItemIsEditable) == 0)
         return false;
+
+    disconnect(m_manager, SIGNAL(rulesChanged()), this, SLOT(rulesChanged()));
+    bool changed = false;
     switch (role) {
     case Qt::EditRole:
     case Qt::DisplayRole:
@@ -229,11 +232,16 @@ bool AdBlockModel::setData(const QModelIndex &index, const QVariant &value, int 
                 AdBlockRule r = rule(index);
                 r.setFilter(value.toString());
                 sub->replaceRule(r, index.row());
+                dataChanged(index, index);
+                changed = true;
             }
         } else {
             AdBlockSubscription *sub = subscription(index);
-            if (sub)
+            if (sub) {
                 sub->setTitle(value.toString());
+                dataChanged(index, index);
+                changed = true;
+            }
         }
         break;
     case Qt::CheckStateRole:
@@ -243,17 +251,23 @@ bool AdBlockModel::setData(const QModelIndex &index, const QVariant &value, int 
                 AdBlockRule r = rule(index);
                 r.setEnabled(value == Qt::Checked);
                 sub->replaceRule(r, index.row());
+                dataChanged(index, index);
+                changed = true;
             }
         } else {
             AdBlockSubscription *sub = subscription(index);
-            if (sub)
+            if (sub) {
                 sub->setEnabled(value == Qt::Checked);
+                dataChanged(index, index);
+                changed = true;
+            }
         }
         break;
     default:
         break;
     }
-    return false;
+    connect(m_manager, SIGNAL(rulesChanged()), this, SLOT(rulesChanged()));
+    return changed;
 }
 
 bool AdBlockModel::hasChildren(const QModelIndex &parent) const
