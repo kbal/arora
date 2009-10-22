@@ -1,5 +1,5 @@
 /*
- * Copyright 2008 Benjamin C. Meyer <ben@meyerhome.net>
+ * Copyright 2008-2009 Benjamin C. Meyer <ben@meyerhome.net>
  * Copyright 2008 Jason A. Donenfeld <Jason@zx2c4.com>
  * Copyright 2008 Ariya Hidayat <ariya.hidayat@gmail.com>
  *
@@ -134,6 +134,7 @@ BrowserMainWindow::BrowserMainWindow(QWidget *parent, Qt::WindowFlags flags)
     QWidget *centralWidget = new QWidget(this);
     BookmarksModel *boomarksModel = BrowserApplication::bookmarksManager()->bookmarksModel();
     m_bookmarksToolbar = new BookmarksToolBar(boomarksModel, this);
+    m_bookmarksToolbar->setObjectName(QLatin1String("BookmarksToolbar"));
     connect(m_bookmarksToolbar, SIGNAL(openUrl(const QUrl&, const QString&)),
             m_tabWidget, SLOT(loadUrlFromUser(const QUrl&, const QString&)));
     connect(m_bookmarksToolbar, SIGNAL(openUrl(const QUrl&, TabWidget::OpenUrlIn, const QString&)),
@@ -234,6 +235,31 @@ BrowserMainWindow::~BrowserMainWindow()
     m_autoSaver->saveIfNeccessary();
 }
 
+void BrowserMainWindow::keyPressEvent(QKeyEvent *event)
+{
+    switch (event->key()) {
+    case Qt::Key_HomePage:
+        m_historyHomeAction->trigger();
+        event->accept();
+        break;
+    case Qt::Key_Favorites:
+        m_bookmarksShowAllAction->trigger();
+        event->accept();
+        break;
+    case Qt::Key_Search:
+        m_toolsWebSearchAction->trigger();
+        event->accept();
+        break;
+    case Qt::Key_OpenUrl:
+        m_fileOpenLocationAction->trigger();
+        event->accept();
+        break;
+    default:
+        QMainWindow::keyPressEvent(event);
+        break;
+    }
+}
+
 BrowserMainWindow *BrowserMainWindow::parentWindow(QWidget *widget)
 {
     while (widget) {
@@ -287,8 +313,8 @@ QByteArray BrowserMainWindow::saveState(bool withTabs) const
 
     // save the normal size so exiting fullscreen/maximize will work reasonably
     stream << normalGeometry().size();
-    stream << !m_navigationBar->isHidden();
-    stream << !m_bookmarksToolbar->isHidden();
+    stream << !m_navigationBar->isHidden(); // DEAD
+    stream << !m_bookmarksToolbar->isHidden(); // DEAD
     stream << !statusBar()->isHidden();
     if (withTabs)
         stream << tabWidget()->saveState();
@@ -303,9 +329,11 @@ QByteArray BrowserMainWindow::saveState(bool withTabs) const
     // version 3
     stream << isMaximized();
     stream << isFullScreen();
-    stream << !menuBar()->isHidden();
-    stream << m_menuBarVisible;
+    stream << menuBar()->isVisible();
+    stream << m_menuBarVisible; // DEAD
     stream << m_statusBarVisible;
+
+    stream << QMainWindow::saveState();
 
     return data;
 }
@@ -325,8 +353,8 @@ bool BrowserMainWindow::restoreState(const QByteArray &state)
         return false;
 
     QSize size;
-    bool showToolbar;
-    bool showBookmarksBar;
+    bool showToolbarDEAD;
+    bool showBookmarksBarDEAD;
     bool showStatusbar;
     QByteArray tabState;
     QByteArray splitterState;
@@ -336,10 +364,11 @@ bool BrowserMainWindow::restoreState(const QByteArray &state)
     bool maximized;
     bool fullScreen;
     bool showMenuBar;
+    QByteArray qMainWindowState;
 
     stream >> size;
-    stream >> showToolbar;
-    stream >> showBookmarksBar;
+    stream >> showToolbarDEAD;
+    stream >> showBookmarksBarDEAD;
     stream >> showStatusbar;
     stream >> tabState;
     stream >> splitterState;
@@ -351,25 +380,18 @@ bool BrowserMainWindow::restoreState(const QByteArray &state)
         stream >> maximized;
         stream >> fullScreen;
         stream >> showMenuBar;
-        stream >> m_menuBarVisible;
+        stream >> showMenuBar; // m_menuBarVisible DEAD
         stream >> m_statusBarVisible;
+        stream >> qMainWindowState;
     } else {
         maximized = false;
         fullScreen = false;
         showMenuBar = true;
-        m_menuBarVisible = true;
         m_statusBarVisible = showStatusbar;
     }
 
     if (size.isValid())
         resize(size);
-
-    m_navigationBar->setVisible(showToolbar);
-
-    m_bookmarksToolbar->setVisible(showBookmarksBar);
-#if defined(Q_WS_MAC)
-    m_bookmarksToolbarFrame->setVisible(showBookmarksBar);
-#endif
 
     if (maximized)
         setWindowState(windowState() | Qt::WindowMaximized);
@@ -379,22 +401,32 @@ bool BrowserMainWindow::restoreState(const QByteArray &state)
     }
 
     menuBar()->setVisible(showMenuBar);
+    m_menuBarVisible = showMenuBar;
 
     statusBar()->setVisible(showStatusbar);
 
     m_navigationSplitter->restoreState(splitterState);
 
-    if (!tabState.isEmpty() && !tabWidget()->restoreState(tabState))
-        return false;
+    tabWidget()->restoreState(tabState);
 
     m_tabWidget->tabBar()->setShowTabBarWhenOneTab(showTabBarWhenOneTab);
 
-    Qt::ToolBarArea navigationArea = Qt::ToolBarArea(navigationBarLocation);
-    if (navigationArea != Qt::TopToolBarArea && navigationArea != Qt::NoToolBarArea)
-        addToolBar(navigationArea, m_navigationBar);
-    Qt::ToolBarArea bookmarkArea = Qt::ToolBarArea(bookmarkBarLocation);
-    if (bookmarkArea != Qt::TopToolBarArea && bookmarkArea != Qt::NoToolBarArea)
-        addToolBar(bookmarkArea, m_bookmarksToolbar);
+    if (qMainWindowState.isEmpty()) {
+        m_navigationBar->setVisible(showToolbarDEAD);
+        m_bookmarksToolbar->setVisible(showBookmarksBarDEAD);
+        Qt::ToolBarArea navigationArea = Qt::ToolBarArea(navigationBarLocation);
+        if (navigationArea != Qt::TopToolBarArea && navigationArea != Qt::NoToolBarArea)
+            addToolBar(navigationArea, m_navigationBar);
+        Qt::ToolBarArea bookmarkArea = Qt::ToolBarArea(bookmarkBarLocation);
+        if (bookmarkArea != Qt::TopToolBarArea && bookmarkArea != Qt::NoToolBarArea)
+            addToolBar(bookmarkArea, m_bookmarksToolbar);
+    } else {
+        QMainWindow::restoreState(qMainWindowState);
+    }
+
+#if defined(Q_WS_MAC)
+    m_bookmarksToolbarFrame->setVisible(m_bookmarksToolbar->isVisible());
+#endif
 
     return true;
 }
@@ -798,6 +830,7 @@ void BrowserMainWindow::setupMenu()
     m_toolsMenu->addAction(m_toolsEnableInspectorAction);
 
     m_toolsSearchManagerAction = new QAction(m_toolsMenu);
+    m_toolsSearchManagerAction->setMenuRole(QAction::NoRole);
     connect(m_toolsSearchManagerAction, SIGNAL(triggered()),
             this, SLOT(showSearchDialog()));
     m_toolsMenu->addAction(m_toolsSearchManagerAction);
@@ -808,7 +841,8 @@ void BrowserMainWindow::setupMenu()
     m_toolsMenu->addAction(m_adBlockDialogAction);
 
     m_toolsMenu->addSeparator();
-    m_toolsPreferencesAction = new QAction(m_editMenu);
+    m_toolsPreferencesAction = new QAction(m_toolsMenu);
+    m_toolsPreferencesAction->setMenuRole(QAction::PreferencesRole);
     connect(m_toolsPreferencesAction, SIGNAL(triggered()),
             this, SLOT(preferences()));
     m_toolsMenu->addAction(m_toolsPreferencesAction);
@@ -972,12 +1006,16 @@ void BrowserMainWindow::retranslate()
     // Toolbar
     m_navigationBar->setWindowTitle(tr("Navigation"));
     m_bookmarksToolbar->setWindowTitle(tr("&Bookmarks"));
+
+    m_stopReloadAction->setText(tr("Reload / Stop"));
+    updateStopReloadActionText(false);
 }
 
 void BrowserMainWindow::setupToolBar()
 {
     setUnifiedTitleAndToolBarOnMac(true);
     m_navigationBar = new QToolBar(this);
+    m_navigationBar->setObjectName(QLatin1String("NavigationToolBar"));
     addToolBar(m_navigationBar);
 
     m_historyBackAction->setIcon(style()->standardIcon(QStyle::SP_ArrowBack, 0, this));
@@ -1260,6 +1298,7 @@ void BrowserMainWindow::closeEvent(QCloseEvent *event)
         settings.beginGroup(QLatin1String("tabs"));
         bool confirm = settings.value(QLatin1String("confirmClosingMultipleTabs"), true).toBool();
         if (confirm) {
+            QApplication::alert(this);
             int ret = QMessageBox::warning(this, QString(),
                                            tr("Are you sure you want to close the window?"
                                               "  There are %1 tabs open").arg(m_tabWidget->count()),
@@ -1356,7 +1395,7 @@ void BrowserMainWindow::viewPageSource()
     QString title = currentTab()->title();
     QString markup = currentTab()->page()->mainFrame()->toHtml();
     QUrl url = currentTab()->url();
-    SourceViewer *viewer = new SourceViewer(markup, title, url, this);
+    SourceViewer *viewer = new SourceViewer(markup, title, url);
     viewer->setAttribute(Qt::WA_DeleteOnClose);
     viewer->show();
 }
@@ -1423,18 +1462,29 @@ ToolbarSearch *BrowserMainWindow::toolbarSearch() const
     return m_toolbarSearch;
 }
 
+void BrowserMainWindow::updateStopReloadActionText(bool loading)
+{
+    if (loading) {
+        m_stopReloadAction->setToolTip(tr("Stop loading the current page"));
+        m_stopReloadAction->setIconText(tr("Stop"));
+    } else {
+        m_stopReloadAction->setToolTip(tr("Reload the current page"));
+        m_stopReloadAction->setIconText(tr("Reload"));
+    }
+}
+
 void BrowserMainWindow::loadProgress(int progress)
 {
     if (progress < 100 && progress > 0) {
         disconnect(m_stopReloadAction, SIGNAL(triggered()), m_viewReloadAction, SLOT(trigger()));
         m_stopReloadAction->setIcon(m_stopIcon);
         connect(m_stopReloadAction, SIGNAL(triggered()), m_viewStopAction, SLOT(trigger()));
-        m_stopReloadAction->setToolTip(tr("Stop loading the current page"));
+        updateStopReloadActionText(true);
     } else {
         disconnect(m_stopReloadAction, SIGNAL(triggered()), m_viewStopAction, SLOT(trigger()));
         m_stopReloadAction->setIcon(m_reloadIcon);
         connect(m_stopReloadAction, SIGNAL(triggered()), m_viewReloadAction, SLOT(trigger()));
-        m_stopReloadAction->setToolTip(tr("Reload the current page"));
+        updateStopReloadActionText(false);
     }
 }
 

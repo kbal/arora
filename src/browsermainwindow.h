@@ -108,6 +108,7 @@ public slots:
 
 protected:
     void closeEvent(QCloseEvent *event);
+    void keyPressEvent(QKeyEvent *event);
     void mousePressEvent(QMouseEvent *event);
     void changeEvent(QEvent *event);
 
@@ -170,6 +171,7 @@ private:
     void loadDefaultState();
     void setupMenu();
     void setupToolBar();
+    void updateStopReloadActionText(bool loading);
 
 private:
     QMenu *m_fileMenu;

@@ -1,5 +1,5 @@
 /*
- * Copyright 2008 Benjamin C. Meyer <ben@meyerhome.net>
+ * Copyright 2008-2009 Benjamin C. Meyer <ben@meyerhome.net>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -61,12 +61,6 @@ LocationBar::LocationBar(QWidget *parent)
 
     updateTextMargins();
     setUpdatesEnabled(true);
-
-    m_defaultBaseColor = palette().color(QPalette::Base);
-
-    QPalette p = palette();
-    p.setColor(QPalette::Base, QColor(255, 255, 255, 100));
-    setPalette(p);
 }
 
 void LocationBar::setWebView(WebView *webView)
@@ -93,52 +87,34 @@ void LocationBar::webViewUrlChanged(const QUrl &url)
     setCursorPosition(0);
 }
 
-static QLinearGradient generateGradient(const QColor &top, const QColor &middle, int height)
-{
-    QLinearGradient gradient(0, 0, 0, height);
-    gradient.setColorAt(0, top);
-    gradient.setColorAt(0.15, middle.lighter(120));
-    gradient.setColorAt(0.5, middle);
-    gradient.setColorAt(0.85, middle.lighter(120));
-    gradient.setColorAt(1, top);
-    return gradient;
-}
-
 void LocationBar::paintEvent(QPaintEvent *event)
 {
-    QPainter painter(this);
-
     QPalette p = palette();
-    QColor backgroundColor = m_defaultBaseColor;
+    QColor defaultBaseColor = QApplication::palette().color(QPalette::Base);
+    QColor backgroundColor = defaultBaseColor;
     if (m_webView && m_webView->url().scheme() == QLatin1String("https")
         && p.color(QPalette::Text).value() < 128) {
         QColor lightYellow(248, 248, 210);
         backgroundColor = lightYellow;
     }
 
-    // paint the text background
-    QStyleOptionFrameV2 panel;
-    initStyleOption(&panel);
-    QRect backgroundRect = style()->subElementRect(QStyle::SE_LineEditContents, &panel, this);
-    painter.setBrush(backgroundColor);
-    painter.setPen(backgroundColor);
-    painter.drawRect(backgroundRect);
-
-    // paint the progressbar
-    if (m_webView && !hasFocus()) {
+    // set the progress bar
+    if (m_webView) {
         int progress = m_webView->progress();
-        QColor loadingColor = QColor(116, 192, 250);
-        if (p.color(QPalette::Text).value() >= 128)
-            loadingColor = m_defaultBaseColor.darker(200);
+        if (progress == 0) {
+            p.setBrush(QPalette::Base, backgroundColor);
+        } else {
+            QColor loadingColor = QColor(116, 192, 250);
+            if (p.color(QPalette::Text).value() >= 128)
+                loadingColor = defaultBaseColor.darker(200);
 
-        painter.setBrush(generateGradient(m_defaultBaseColor, loadingColor, height()));
-        painter.setPen(Qt::transparent);
-
-        int mid = backgroundRect.width() * progress / 100;
-        QRect progressRect = QRect(backgroundRect.x(), backgroundRect.y(), mid, backgroundRect.height());
-        painter.drawRect(progressRect);
+            QLinearGradient gradient(0, 0, width(), 0);
+            gradient.setColorAt(0, loadingColor);
+            gradient.setColorAt(((double)progress)/100, backgroundColor);
+            p.setBrush(QPalette::Base, gradient);
+        }
+        setPalette(p);
     }
-    painter.end();
 
     LineEdit::paintEvent(event);
 }
@@ -163,9 +139,29 @@ void LocationBar::keyPressEvent(QKeyEvent *event)
     if (event->key() == Qt::Key_Escape && m_webView) {
         setText(QString::fromUtf8(m_webView->url().toEncoded()));
         selectAll();
-    } else {
-        QLineEdit::keyPressEvent(event);
+        return;
     }
+
+    QString currentText = text().trimmed();
+    if ((event->key() == Qt::Key_Enter || event->key() == Qt::Key_Return)
+        && !currentText.startsWith(QLatin1String("http://"), Qt::CaseInsensitive)) {
+        QString append;
+        if (event->modifiers() == Qt::ControlModifier)
+            append = QLatin1String(".com");
+        else if (event->modifiers() == (Qt::ControlModifier | Qt::ShiftModifier))
+            append = QLatin1String(".org");
+        else if (event->modifiers() == Qt::ShiftModifier)
+            append = QLatin1String(".net");
+        QUrl url(QLatin1String("http://") + currentText);
+        QString host = url.host();
+        if (!host.endsWith(append, Qt::CaseInsensitive)) {
+            host += append;
+            url.setHost(host);
+            setText(url.toString());
+        }
+    }
+
+    LineEdit::keyPressEvent(event);
 }
 
 void LocationBar::dragEnterEvent(QDragEnterEvent *event)

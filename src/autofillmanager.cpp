@@ -49,7 +49,7 @@
 
 AutoFillManager::AutoFillManager(QObject *parent)
     : QObject(parent)
-    , m_savePasswordForms(false)
+    , m_savePasswordForms(true)
     , m_allowAutoCompleteOff(true)
     , m_saveTimer(new AutoSaver(this))
 {
@@ -195,7 +195,7 @@ void AutoFillManager::post(const QNetworkRequest &request, const QByteArray &out
     if (form.hasAPassword && alreadyAccepted == -1) {
         QMessageBox messageBox;
         messageBox.setText(tr("<b>Would you like to save this password?</b><br> \
-        To review passwords you have saved and remove them, open the AutoFill pane of preferences."));
+        To review passwords you have saved and remove them, open the AutoFill panel of preferences."));
         messageBox.addButton(tr("Never for this site"), QMessageBox::DestructiveRole);
         messageBox.addButton(tr("Not now"), QMessageBox::RejectRole);
         messageBox.addButton(QMessageBox::Yes);
@@ -340,30 +340,47 @@ void AutoFillManager::fill(QWebPage *page) const
             const QString value = element.second;
 
             // When we drop 4.5 migrate this to the 4.6 dom API
-            bool disabled = page->mainFrame()->evaluateJavaScript(QString(QLatin1String("document.forms[%1].%2.disabled")).arg(formName).arg(key)).toBool();
-            if (disabled)
+            bool disabled = page->mainFrame()->evaluateJavaScript(QString(QLatin1String("document.forms[%1].elements[\"%2\"].disabled")).arg(formName).arg(key)).toBool();
+            if (disabled) {
+#ifdef AUTOFILL_DEBUG
+                qDebug() << formName << "is disabled";
+#endif
                 continue;
-            bool readOnly = page->mainFrame()->evaluateJavaScript(QString(QLatin1String("document.forms[%1].%2.readonly")).arg(formName).arg(key)).toBool();
-            if (readOnly)
+            }
+            bool readOnly = page->mainFrame()->evaluateJavaScript(QString(QLatin1String("document.forms[%1].elements[\"%2\"].readonly")).arg(formName).arg(key)).toBool();
+            if (readOnly) {
+#ifdef AUTOFILL_DEBUG
+                qDebug() << formName << "is readOnly";
+#endif
                 continue;
+            }
 
-            QString type = page->mainFrame()->evaluateJavaScript(QString(QLatin1String("document.forms[%1].%2.type")).arg(formName).arg(key)).toString();
+            QString type = page->mainFrame()->evaluateJavaScript(QString(QLatin1String("document.forms[%1].elements[\"%2\"].type")).arg(formName).arg(key)).toString();
             if (type.isEmpty()
                 || type == QLatin1String("hidden")
                 || type == QLatin1String("reset")
-                || type == QLatin1String("submit"))
+                || type == QLatin1String("submit")) {
+#ifdef AUTOFILL_DEBUG
+                qDebug() << formName << key << "is hidden, reset or submit";
+#endif
                 continue;
+            }
 #ifdef AUTOFILL_DEBUG
             qDebug() << "type:" << type << "readonly" << readOnly << "disabled" << disabled << key << value;
 #endif
             QString setType = (type == QLatin1String("checkbox"))
                                 ? QLatin1String("checked")
                                 : QLatin1String("value");
-            QString javascript = QString(QLatin1String("document.forms[%1].%2.%3=\"%4\";"))
+
+            // XXX is there a cleaner way to do this?
+            QString jsValue = value;
+            jsValue.replace(QLatin1Char('\\'), QLatin1String("\\\\"));
+            jsValue.replace(QLatin1Char('\"'), QLatin1String("\\\""));
+            QString javascript = QString(QLatin1String("document.forms[%1].elements[\"%2\"].%3=\"%4\";"))
                     .arg(formName)
                     .arg(key)
                     .arg(setType)
-                    .arg(value);
+                    .arg(jsValue);
             page->mainFrame()->evaluateJavaScript(javascript);
         }
     }

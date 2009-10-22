@@ -83,6 +83,7 @@
 #include <qdebug.h>
 #include <qevent.h>
 #include <qmenubar.h>
+#include <qtimer.h>
 #include <qwebframe.h>
 
 #if QT_VERSION >= 0x040600 || defined(WEBKIT_TRUNK)
@@ -93,6 +94,7 @@ Q_DECLARE_METATYPE(QWebElement)
 #include <qsettings.h>
 #include <qtooltip.h>
 #include <qwebelement.h>
+#include <qwindowsstyle.h>
 #endif
 
 #include <qdebug.h>
@@ -108,6 +110,14 @@ WebView::WebView(QWidget *parent)
 #endif
 {
     setPage(m_page);
+#if QT_VERSION >= 0x040600
+    QPalette p;
+    if (p.color(QPalette::Window) != Qt::white) {
+        QWindowsStyle s;
+        p = s.standardPalette();
+        setPalette(p);
+    }
+#endif
     connect(page(), SIGNAL(statusBarMessage(const QString&)),
             SLOT(setStatusBarText(const QString&)));
     connect(this, SIGNAL(loadProgress(int)),
@@ -430,10 +440,10 @@ void WebView::addSearchEngine()
     QUrl searchUrl(page()->mainFrame()->baseUrl().resolved(QUrl(formElement.attribute(QLatin1String("action")))));
     QMap<QString, QString> searchEngines;
     QList<QWebElement> inputFields = formElement.findAll(QLatin1String("input"));
-    foreach (const QWebElement &inputField, inputFields) {
+    foreach (QWebElement inputField, inputFields) {
         QString type = inputField.attribute(QLatin1String("type"), QLatin1String("text"));
         QString name = inputField.attribute(QLatin1String("name"));
-        QString value = inputField.scriptableProperty(QLatin1String("value")).toString();
+        QString value = inputField.evaluateJavaScript(QLatin1String("this.value")).toString();
 
         if (type == QLatin1String("submit")) {
             searchEngines.insert(value, name);
@@ -443,7 +453,7 @@ void WebView::addSearchEngine()
 
             searchUrl.addQueryItem(name, value);
         } else if (type == QLatin1String("checkbox") || type == QLatin1String("radio")) {
-            if (inputField.scriptableProperty(QLatin1String("checked")).toBool()) {
+            if (inputField.evaluateJavaScript(QLatin1String("this.checked")).toBool()) {
                 searchUrl.addQueryItem(name, value);
             }
         } else if (type == QLatin1String("hidden")) {
@@ -452,9 +462,9 @@ void WebView::addSearchEngine()
     }
 
     QList<QWebElement> selectFields = formElement.findAll(QLatin1String("select"));
-    foreach (const QWebElement &selectField, selectFields) {
+    foreach (QWebElement selectField, selectFields) {
         QString name = selectField.attribute(QLatin1String("name"));
-        int selectedIndex = selectField.scriptableProperty(QLatin1String("selectedIndex")).toInt();
+        int selectedIndex = selectField.evaluateJavaScript(QLatin1String("this.selectedIndex")).toInt();
         if (selectedIndex == -1)
             continue;
 
@@ -688,9 +698,13 @@ void WebView::keyPressEvent(QKeyEvent *event)
                 return;
             }
             hideAccessKeys();
+        } else {
+            QTimer::singleShot(200, this, SLOT(accessKeyShortcut()));
         }
     }
 #endif
+
+#if QT_VERSION < 0x040600
     switch (event->key()) {
     case Qt::Key_Back:
         pageAction(WebPage::Back)->trigger();
@@ -710,21 +724,31 @@ void WebView::keyPressEvent(QKeyEvent *event)
         break;
     default:
         QWebView::keyPressEvent(event);
+        return;
     }
+#endif
+    QWebView::keyPressEvent(event);
 }
 
 #if QT_VERSION >= 0x040600 || defined(WEBKIT_TRUNK)
+void WebView::accessKeyShortcut()
+{
+    if (!hasFocus()
+        || !m_accessKeysPressed
+        || !m_enableAccessKeys)
+        return;
+    if (m_accessKeyLabels.isEmpty()) {
+        showAccessKeys();
+    } else {
+        hideAccessKeys();
+    }
+    m_accessKeysPressed = false;
+}
+
 void WebView::keyReleaseEvent(QKeyEvent *event)
 {
-    if (m_accessKeysPressed) {
-        if (m_accessKeyLabels.isEmpty()) {
-            showAccessKeys();
-        } else {
-            hideAccessKeys();
-        }
-        m_accessKeysPressed = false;
-    }
-
+    if (m_enableAccessKeys)
+        m_accessKeysPressed = event->key() == Qt::Key_Control;
     QWebView::keyReleaseEvent(event);
 }
 

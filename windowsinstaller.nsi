@@ -3,12 +3,12 @@
 SetCompressor /SOLID /FINAL lzma
 
 !define PRODUCT_NAME "Arora"
-!define /date PRODUCT_VERSION "0.9.0"
+!define /date PRODUCT_VERSION "0.10.1"
 ;!define /date PRODUCT_VERSION "Snapshot (%#m-%#d-%#Y)"
 !define PRODUCT_DIR_REGKEY "Software\Microsoft\Windows\CurrentVersion\App Paths\arora.exe"
 !define PRODUCT_UNINST_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\${PRODUCT_NAME}"
 !define PRODUCT_UNINST_ROOT_KEY "HKLM"
-!define QTDIR "C:\Qt\qt-all-opensource-src-4.5.2"
+!define QTDIR "C:\Qt\qt-all-opensource-src-4.5.3"
 
 !include "MUI.nsh"
 !define MUI_ABORTWARNING
@@ -47,12 +47,17 @@ Section "Main Components"
   File "${QTDIR}\lib\QtNetwork4.dll"
   File "${QTDIR}\lib\QtWebKit4.dll"
   File "${QTDIR}\lib\QtScript4.dll"
-  File "${QTDIR}\lib\phonon4.dll"
+  File "${QTDIR}\lib\QtSql4.dll"
+  ;File "${QTDIR}\lib\phonon4.dll"
   File "C:\Qt\openssl-0.9.8j\out32dll\ssleay32.dll"
   File "C:\Qt\openssl-0.9.8j\out32dll\libeay32.dll"
 
   SetOutPath "$INSTDIR\locale"
   File "src\.qm\locale\*.qm"
+  File "${QTDIR}\translations\qt*.qm"
+
+  SetOutPath "$INSTDIR\plugins\sqldrivers"
+  File "${QTDIR}\plugins\sqldrivers\qsqlite4.dll"
 
   SetOutPath "$INSTDIR\imageformats"
   File "${QTDIR}\plugins\imageformats\qtiff4.dll"
